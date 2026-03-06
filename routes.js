@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { atualizarDadosCliente } = require('./service');
 const { validarDadosCliente } = require('./validacoes');
+const RedisDB = require('./services/redis')
 
 console.log('Arquivo routes.js carregado com sucesso!');
 
@@ -54,6 +55,25 @@ router.post('/atualizarDados', (req, res) => {
             });
         }
     });
+});
+
+router.post('/redis', (req, res) => {
+
+    const Redis = new RedisDB()
+    Redis.connect()
+    // Redis.setClient("key", "value")
+    // Redis.setClientVerify("key", "value")
+    // Redis.setClientVerify("nameClient", "idCliente")
+
+    res.status(200).json({
+        success: true,
+        message: "Requisição recebida com sucesso"
+    });
+
+    // res.status(400).json({
+    //     success: false,
+    //     message: "Erro na requisição"
+    // });
 });
 
 module.exports = router;
