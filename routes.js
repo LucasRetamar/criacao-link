@@ -65,8 +65,8 @@ router.post('/atualizarDados', (req, res) => {
             res.json({
                 error: false,
                 data: {
-                    link: `https://agendaservico.com/${link}`,
-                    linkAdm: "https://agendaservico.com/login"
+                    link: `${process.env.URL_CLIENTE}${link}`,
+                    linkAdm: process.env.URL_ADM
                 },
                 message: result.message || "Site criado com sucesso!"
             });
