@@ -57,22 +57,21 @@ router.post('/atualizarDados', (req, res) => {
     });
 });
 
-router.post('/redis', (req, res) => {
-
-    const Redis = new RedisDB()
-    Redis.connect()
-    // Redis.setClient("key", "value")
-    // Redis.setClientVerify("key", "value")
-    // Redis.setClientVerify("nameClient", "idCliente")
+router.post('/teste', (req, res) => {
 
     res.status(200).json({
         success: true,
-        message: "Requisição recebida com sucesso"
+        message: "Requisição recebida com sucesso",
+        data: {
+            link: "https://agendaservico.com",
+            linkAdm: "https://agendaservico.com/"
+        }
     });
 
     // res.status(400).json({
     //     success: false,
-    //     message: "Erro na requisição"
+    //     message: "Erro na requisição",
+    //     data: []
     // });
 });
 
