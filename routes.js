@@ -62,14 +62,17 @@ router.post('/atualizarDados', (req, res) => {
                 });
             }
 
-            res.json({
+            const responseData = {
                 error: false,
                 data: {
                     link: `${process.env.URL_CLIENTE}${link}`,
                     linkAdm: process.env.URL_ADM
                 },
                 message: result.message || "Site criado com sucesso!"
-            });
+            };
+
+            console.log('Resposta enviada:', responseData);
+            res.json(responseData);
         } else {
             res.status(404).json({
                 error: true,
