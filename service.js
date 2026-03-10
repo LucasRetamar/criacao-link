@@ -1,4 +1,5 @@
 const db = require('./database');
+const logger = require('./logger');
 
 const uploadLogoToAsImage = async (idCliente, base64Image) => {
     if (!base64Image || !base64Image.includes('base64,')) {
@@ -24,7 +25,7 @@ const uploadLogoToAsImage = async (idCliente, base64Image) => {
         });
 
         if (!response.ok) {
-            console.error('Servidor de imagem retornou erro:', response.status);
+            logger.error(`Servidor de imagem retornou erro: ${response.status}`, 'asimagem');
             return { path: null, error: true };
         }
 
@@ -33,11 +34,11 @@ const uploadLogoToAsImage = async (idCliente, base64Image) => {
             const result = JSON.parse(text);
             return { path: result.fileNameFormatada || null, error: false };
         } catch (parseError) {
-            console.error('Erro ao parsear JSON do servidor de imagem:', text);
+            logger.error(`Erro ao parsear JSON do servidor de imagem: ${text}`, 'asimagem');
             return { path: null, error: true };
         }
     } catch (error) {
-        console.error('Erro no upload para asimage:', error);
+        logger.error(`Erro no upload para asimage: ${error.message}`, 'asimagem');
         return { path: null, error: true };
     }
 };
@@ -74,10 +75,10 @@ const atualizarDadosCliente = async (dados, callback) => {
             logoPath = uploadResult.path;
             imageError = uploadResult.error;
             if (logoPath) {
-                console.log('Logo enviada com sucesso:', logoPath);
+                logger.info(`Logo enviada com sucesso: ${logoPath}`, 'asimagem');
             }
         } catch (uploadError) {
-            console.error('Erro ao processar logo:', uploadError);
+            logger.error(`Erro ao processar logo: ${uploadError.message}`, 'asimagem');
             imageError = true;
         }
     }
@@ -95,7 +96,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
             db.query(querySenha, valoresSenha, (errorSenha, resultsSenha) => {
                 if (errorSenha) {
-                    console.error('Erro ao inserir na tabela senhas:', errorSenha);
+                    logger.error(`Erro ao inserir na tabela senhas: ${errorSenha.message}`, 'banco');
                     return callback(errorSenha);
                 }
 
@@ -108,7 +109,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                 db.query(queryUpdateFunc, valoresUpdateFunc, (errorUpdateFunc) => {
                     if (errorUpdateFunc) {
-                        console.error('Erro ao atualizar funcionário no banco secundário:', errorUpdateFunc);
+                        logger.error(`Erro ao atualizar funcionário no banco secundário: ${errorUpdateFunc.message}`, 'banco');
                         return callback(errorUpdateFunc);
                     }
 
@@ -116,7 +117,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                     db.query(queryFetch, (errFetch, rows) => {
                         if (errFetch) {
-                            console.error('Erro ao buscar cores atuais:', errFetch);
+                            logger.error(`Erro ao buscar cores atuais: ${errFetch.message}`, 'banco');
                             return callback(errFetch);
                         }
 
@@ -124,7 +125,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                         try {
                             coresAtuais = (rows[0] && rows[0].cores) ? (typeof rows[0].cores === 'string' ? JSON.parse(rows[0].cores) : rows[0].cores) : {};
                         } catch (e) {
-                            console.error('Erro ao parsear JSON de cores:', e);
+                            logger.error(`Erro ao parsear JSON de cores: ${e.message}`, 'banco');
                         }
 
                         const novasCores = { ...coresAtuais, ...cores };
@@ -142,7 +143,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                         db.query(query2, valores2, (error2) => {
                             if (error2) {
-                                console.error(`Erro ao atualizar banco secundário (${bancoSecundario}):`, error2);
+                                logger.error(`Erro ao atualizar banco secundário (${bancoSecundario}): ${error2.message}`, 'banco');
                                 return callback(error2);
                             }
 
@@ -152,7 +153,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                                 db.query(query3, [valores3], (error3, results3) => {
                                     if (error3) {
-                                        console.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}):`, error3);
+                                        logger.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}): ${error3.message}`, 'banco');
                                         return callback(error3);
                                     }
 
@@ -164,7 +165,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                                     db.query(queryDelete, (errorDelete) => {
                                         if (errorDelete) {
-                                            console.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}):`, errorDelete);
+                                            logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
                                             return callback(errorDelete);
                                         }
 
@@ -188,7 +189,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                                         db.query(query4, [firstInsertId, lastInsertId], (error4) => {
                                             if (error4) {
-                                                console.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}):`, error4);
+                                                logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
                                                 return callback(error4);
                                             }
                                             callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
