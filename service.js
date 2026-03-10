@@ -18,7 +18,7 @@ const uploadLogoToAsImage = async (idCliente, base64Image) => {
         const blob = new Blob([buffer], { type: mimeType });
         formData.append('image', blob, 'logo.png');
 
-        const response = await fetch('https://asimage.online/upload', {
+        const response = await fetch(process.env.IMAGE_UPLOAD_URL, {
             method: 'POST',
             body: formData
         });

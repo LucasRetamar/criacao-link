@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const routes = require('./routes');
 const app = express();
@@ -10,8 +11,9 @@ app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         console.error('Erro de sintaxe JSON detectado:', err.message);
         return res.status(400).json({
-            error: 'JSON malformado.',
-            detalhes: 'O formato do seu JSON está incorreto (verifique vírgulas, aspas ou valores numéricos inválidos).'
+            error: true,
+            status: 400,
+            message: 'O formato do seu JSON está incorreto (verifique vírgulas, aspas ou valores numéricos inválidos).'
         });
     }
     next();
