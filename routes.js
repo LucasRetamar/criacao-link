@@ -53,7 +53,8 @@ router.post('/atualizarDados', (req, res) => {
                 fetch(`${cacheUrl}empresas/cache/adicionar/${id_cliente}`, {
                     method: 'PUT',
                     headers: {
-                        'x-api-key': cacheApiKey
+                        'x-api-key': cacheApiKey,
+                        'Content-Type': 'application/json'
                     }
                 }).then(cacheRes => {
                     logger.info(`Atualização de cache para cliente ${id_cliente} - Status: ${cacheRes.status}`, 'cache');
