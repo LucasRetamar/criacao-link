@@ -1,9 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('./logger');
-const { atualizarDadosCliente } = require('./service');
+const { atualizarDadosCliente, validarDados } = require('./service');
 const { validarDadosCliente } = require('./validacoes');
 
+
+router.post('/validarDados', (req, res) => {
+    const { tipo, valor } = req.body;
+
+    if (!tipo || !valor) {
+        return res.status(400).json({
+            error: true,
+            message: 'Tipo e valor são obrigatórios.'
+        });
+    }
+
+    validarDados({ tipo, valor }, (error, result) => {
+        if (error) {
+            logger.error(`Erro ao validar dados (${tipo}): ${error.message}`, 'req');
+            return res.status(500).json({
+                error: true,
+                message: 'Erro ao validar dados.',
+                detalhes: error.message
+            });
+        }
+
+        if (result && result.ok) {
+            res.json({
+                error: false,
+                message: 'Dados válidos.'
+            });
+        } else {
+            res.status(400).json({
+                error: true,
+                status: 400,
+                message: result.message || 'Dados inválidos.'
+            });
+        }
+    });
+});
 
 router.post('/atualizarDados', (req, res) => {
     if (!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) {
@@ -14,7 +49,7 @@ router.post('/atualizarDados', (req, res) => {
             message: 'Nenhum dado foi enviado na requisição ou o formato está incorreto.'
         });
     }
-    // O body agora é logado pelo middleware global no server.js
+
 
     const id_cliente = '0663';
 
