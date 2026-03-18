@@ -8,7 +8,12 @@ const SERVICE_IMAGE_MAPPING = {
     'Corte de cabelo': '02.png',
     'Sobrancelha': '03.png',
     'Barba completa': '04.png',
-    'Pigmentação': '05.png'
+    'Pigmentação': '05.png',
+    'Corte feminino': '06.png',
+    'Escova': '07.png',
+    'Progressiva': '08.png',
+    'Mechas': '09.png',
+    'Hidratação': '10.png'
 };
 
 const uploadLogoToAsImage = async (idCliente, base64Image) => {
