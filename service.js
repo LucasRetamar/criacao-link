@@ -128,7 +128,7 @@ const validarDados = async (dados, callback) => {
             const exists = await checkLinkExists(valor);
             if (exists) {
                 logger.error(`Este link já está em uso por outra empresa: ${valor}`, 'req');
-                return callback(null, { ok: false, message: 'Este link já está em uso por outra empresa' });
+                return callback(null, { ok: false, message: 'Este link já está em uso por outra empresa.' });
             }
         } else if (tipo === 'telefone') {
             const exists = await checkPhoneExists(valor);
@@ -315,40 +315,85 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                 const affectedRows = results3.affectedRows;
                                                 const lastInsertId = firstInsertId + affectedRows - 1;
 
-                                                const queryDelete = `DELETE FROM \`${bancoSecundario}\`.funcionario_servico_funcionamento`;
+                                                const finalizarProcessamento = () => {
+                                                    const queryDelete = `DELETE FROM \`${bancoSecundario}\`.funcionario_servico_funcionamento`;
 
-                                                db.query(queryDelete, (errorDelete) => {
-                                                    if (errorDelete) {
-                                                        logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
-                                                        return callback(errorDelete);
-                                                    }
-
-                                                    const query4 = `
-                                                                    INSERT INTO \`${bancoSecundario}\`.funcionario_servico_funcionamento 
-                                                                    (id_funcionamento, id_funcionario, id_servico, tempo, valor, comissao, status_variacao, existe_variacao)
-                                                                    SELECT 
-                                                                        f.id_funcionamento,
-                                                                        3 AS id_funcionario,
-                                                                        s.id_servico,
-                                                                        s.tempo,
-                                                                        s.valor_servico,
-                                                                        0 AS comissao,
-                                                                        0 AS status_variacao,
-                                                                        0 AS existe_variacao
-                                                                    FROM \`${bancoSecundario}\`.funcionamento f
-                                                                    CROSS JOIN \`${bancoSecundario}\`.servico s
-                                                                    WHERE f.status = 1 
-                                                                    AND s.id_servico BETWEEN ? AND ?
-                                                                `;
-
-                                                    db.query(query4, [firstInsertId, lastInsertId], (error4) => {
-                                                        if (error4) {
-                                                            logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
-                                                            return callback(error4);
+                                                    db.query(queryDelete, (errorDelete) => {
+                                                        if (errorDelete) {
+                                                            logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
+                                                            return callback(errorDelete);
                                                         }
-                                                        callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
+
+                                                        const query4 = `
+                                                                        INSERT INTO \`${bancoSecundario}\`.funcionario_servico_funcionamento 
+                                                                        (id_funcionamento, id_funcionario, id_servico, tempo, valor, comissao, status_variacao, existe_variacao)
+                                                                        SELECT 
+                                                                            f.id_funcionamento,
+                                                                            3 AS id_funcionario,
+                                                                            s.id_servico,
+                                                                            s.tempo,
+                                                                            s.valor_servico,
+                                                                            0 AS comissao,
+                                                                            0 AS status_variacao,
+                                                                            0 AS existe_variacao
+                                                                        FROM \`${bancoSecundario}\`.funcionamento f
+                                                                        CROSS JOIN \`${bancoSecundario}\`.servico s
+                                                                        WHERE f.status = 1 
+                                                                        AND s.id_servico BETWEEN ? AND ?
+                                                                    `;
+
+                                                        db.query(query4, [firstInsertId, lastInsertId], (error4) => {
+                                                            if (error4) {
+                                                                logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
+                                                                return callback(error4);
+                                                            }
+                                                            callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
+                                                        });
                                                     });
-                                                });
+                                                };
+
+                                                if (servicos.length > 1) {
+                                                    const queryResetCat = `UPDATE \`${bancoSecundario}\`.categoria_servico SET status = 0`;
+                                                    db.query(queryResetCat, (errReset) => {
+                                                        if (errReset) {
+                                                            logger.error(`Erro ao resetar status das categorias no banco secundário (${bancoSecundario}): ${errReset.message}`, 'banco');
+                                                            return callback(errReset);
+                                                        }
+
+                                                        const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status) VALUES ('Categoria', 1)`;
+                                                        db.query(queryCat, (errCat, resCat) => {
+                                                            if (errCat) {
+                                                                logger.error(`Erro ao criar categoria no banco secundário (${bancoSecundario}): ${errCat.message}`, 'banco');
+                                                                return callback(errCat);
+                                                            }
+
+                                                            const id_categoria = resCat.insertId;
+                                                            const queryUpdateServ = `UPDATE \`${bancoSecundario}\`.servico SET id_categoria = ? WHERE id_servico BETWEEN ? AND ?`;
+
+                                                            db.query(queryUpdateServ, [id_categoria, firstInsertId + 1, lastInsertId], (errUpdate) => {
+                                                                if (errUpdate) {
+                                                                    logger.error(`Erro ao vincular serviços à categoria no banco secundário (${bancoSecundario}): ${errUpdate.message}`, 'banco');
+                                                                    return callback(errUpdate);
+                                                                }
+
+                                                                const queryVinculo = `
+                                                                                INSERT INTO \`${bancoSecundario}\`.vinculo_servico_categoria_servico (id_servico, id_categoria_servico)
+                                                                                SELECT id_servico, ? FROM \`${bancoSecundario}\`.servico WHERE id_servico BETWEEN ? AND ?
+                                                                            `;
+
+                                                                db.query(queryVinculo, [id_categoria, firstInsertId + 1, lastInsertId], (errVinculo) => {
+                                                                    if (errVinculo) {
+                                                                        logger.error(`Erro ao inserir na tabela vinculo_servico_categoria_servico: ${errVinculo.message}`, 'banco');
+                                                                        return callback(errVinculo);
+                                                                    }
+                                                                    finalizarProcessamento();
+                                                                });
+                                                            });
+                                                        });
+                                                    });
+                                                } else {
+                                                    finalizarProcessamento();
+                                                }
                                             });
                                         };
 
