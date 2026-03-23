@@ -16,6 +16,9 @@ const SERVICE_IMAGE_MAPPING = {
     'Hidratação': '10.png'
 };
 
+const GROUP_A_SERVICES = ['Corte + Barba', 'Corte de cabelo', 'Sobrancelha', 'Barba completa', 'Pigmentação'];
+const GROUP_B_SERVICES = ['Corte feminino', 'Escova', 'Progressiva', 'Mechas', 'Hidratação'];
+
 const uploadLogoToAsImage = async (idCliente, base64Image) => {
     if (!base64Image || !base64Image.includes('base64,')) {
         return { path: null, error: false };
@@ -347,7 +350,66 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                 logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
                                                                 return callback(error4);
                                                             }
-                                                            callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
+
+                                                            const servicesMatchedA = [];
+                                                            const servicesMatchedB = [];
+
+                                                            servicos.forEach((s, index) => {
+                                                                if (GROUP_A_SERVICES.includes(s.nome)) servicesMatchedA.push(index);
+                                                                if (GROUP_B_SERVICES.includes(s.nome)) servicesMatchedB.push(index);
+                                                            });
+
+                                                            const registrarAssinatura = (matchedIndices, pattern) => {
+                                                                return new Promise((resolve, reject) => {
+                                                                    if (matchedIndices.length === 0) return resolve();
+
+                                                                    const subscriptionServices = matchedIndices.map(idx => ({
+                                                                        id: (firstInsertId + idx).toString(),
+                                                                        quantidade: "0"
+                                                                    }));
+
+                                                                    const template = pattern === 'A' ? {
+                                                                        nome: 'Cabelo + Barba Ilimitado TESTE',
+                                                                        descricao: 'Corte + barba ilimitados por R$149,90/mês.\r\nCuide do visual sempre que precisar, sem se preocupar com cada visita. Tenha liberdade para manter o corte em dia e a barba alinhada o mês inteiro, com economia e praticidade em um único plano.',
+                                                                        subtitulo: 'Cabelo + Barba Ilimitado',
+                                                                        link: 'cabelo-barba-ilimitado'
+                                                                    } : {
+                                                                        nome: 'Beleza & Estética Ilimitada',
+                                                                        descricao: 'Transforme seu visual e mantenha sua autoestima sempre em alta. Com nosso plano ilimitado, você tem acesso aos melhores cuidados capilares e tratamentos estéticos sempre que desejar. Praticidade e elegância reunidas em uma assinatura exclusiva para você.',
+                                                                        subtitulo: 'Beleza & Estética Ilimitada',
+                                                                        link: 'beleza-estetica-ilimitada'
+                                                                    };
+
+                                                                    const sqlAssinatura = `
+                                                                        INSERT INTO \`${bancoSecundario}\`.assinatura_pacote 
+                                                                        (tipo, nome, valor, descricao, servicos, subtitulo, termino, forma_pagamento, regra, metodo_pagamento, versao_termos_cliente, link, status, etiqueta, recorrencia, utilizacao, imagem, data_cadastro, ocultar) 
+                                                                        VALUES ('1', ?, '14990', ?, ?, ?, '0', '1', '0', '2', '3', ?, '1', '1', '1', '1', ?, NOW(), '0')
+                                                                    `;
+
+                                                                    const valuesAssinatura = [
+                                                                        template.nome, template.descricao, JSON.stringify(subscriptionServices),
+                                                                        template.subtitulo, template.link, matchedIndices.length.toString()
+                                                                    ];
+
+                                                                    db.query(sqlAssinatura, valuesAssinatura, (errAss) => {
+                                                                        if (errAss) {
+                                                                            logger.error(`Erro ao inserir assinatura (${pattern}): ${errAss.message}`, 'banco');
+                                                                            return reject(errAss);
+                                                                        }
+                                                                        resolve();
+                                                                    });
+                                                                });
+                                                            };
+
+                                                            Promise.all([
+                                                                registrarAssinatura(servicesMatchedA, 'A'),
+                                                                registrarAssinatura(servicesMatchedB, 'B')
+                                                            ]).then(() => {
+                                                                callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
+                                                            }).catch(err => {
+                                                                logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
+                                                                callback(err);
+                                                            });
                                                         });
                                                     });
                                                 };
