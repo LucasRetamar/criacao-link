@@ -369,7 +369,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                     }));
 
                                                                     const template = pattern === 'A' ? {
-                                                                        nome: 'Cabelo + Barba Ilimitado TESTE',
+                                                                        nome: 'Cabelo + Barba Ilimitado',
                                                                         descricao: 'Corte + barba ilimitados por R$149,90/mês.\r\nCuide do visual sempre que precisar, sem se preocupar com cada visita. Tenha liberdade para manter o corte em dia e a barba alinhada o mês inteiro, com economia e praticidade em um único plano.',
                                                                         subtitulo: 'Cabelo + Barba Ilimitado',
                                                                         link: 'cabelo-barba-ilimitado'
