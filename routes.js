@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('./logger');
-const { atualizarDadosCliente, validarDados } = require('./service');
+const { atualizarDadosCliente, validarDados, uploadSubscriptionImages } = require('./service');
 const { validarDadosCliente } = require('./validacoes');
 
 
@@ -81,6 +81,15 @@ router.post('/atualizarDados', (req, res) => {
         }
 
         if (result && result.ok) {
+            // Dispara o upload das imagens em segundo plano (background)
+            if (result.assinaturas && result.assinaturas.length > 0) {
+                result.assinaturas.forEach(ass => {
+                    uploadSubscriptionImages(id_cliente, ass.id, ass.images).catch(err => {
+                        logger.error(`Erro no upload em segundo plano para assinatura ${ass.id}: ${err.message}`, 'asimagem');
+                    });
+                });
+            }
+
             const cacheUrl = process.env.CACHE_URL;
             const cacheApiKey = process.env.CACHE_API_KEY;
 
@@ -120,7 +129,8 @@ router.post('/atualizarDados', (req, res) => {
                 error: false,
                 data: {
                     link: `${process.env.URL_CLIENTE}${link}`,
-                    linkAdm: process.env.URL_ADM
+                    linkAdm: process.env.URL_ADM,
+                    assinaturas: result.assinaturas
                 },
                 message: result.message || "Site criado com sucesso!"
             };
@@ -135,6 +145,37 @@ router.post('/atualizarDados', (req, res) => {
             });
         }
     });
+});
+
+router.post('/uploadImagensAssinatura', async (req, res) => {
+    const { id_cliente, idAssinaturaPacote, images } = req.body;
+
+    if (!id_cliente || !idAssinaturaPacote || !images) {
+        return res.status(400).json({
+            error: true,
+            message: 'idCliente, idAssinaturaPacote e images são obrigatórios.'
+        });
+    }
+
+    try {
+        const result = await uploadSubscriptionImages(id_cliente, idAssinaturaPacote, images);
+        if (result.error) {
+            return res.status(500).json({
+                error: true,
+                message: 'Erro ao realizar upload das imagens da assinatura.'
+            });
+        }
+        res.json({
+            error: false,
+            message: 'Imagens da assinatura enviadas com sucesso!'
+        });
+    } catch (error) {
+        logger.error(`Erro na rota uploadImagensAssinatura: ${error.message}`, 'req');
+        res.status(500).json({
+            error: true,
+            message: 'Erro interno ao processar upload.'
+        });
+    }
 });
 
 module.exports = router;

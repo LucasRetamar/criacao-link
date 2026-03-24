@@ -103,6 +103,51 @@ const uploadLocalImageToAsImage = async (idCliente, fileName) => {
     }
 };
 
+const uploadSubscriptionImages = async (idCliente, idAssinaturaPacote, images) => {
+    if (!images || images.length === 0) return { error: false };
+
+    try {
+        const formData = new FormData();
+        formData.append('idCliente', idCliente);
+        formData.append('type', 'assinatura_pacote');
+        formData.append('idAssinaturaPacote', idAssinaturaPacote);
+        formData.append('edicao', 'true');
+
+        for (let i = 0; i < images.length; i++) {
+            const fileName = images[i];
+            const filePath = path.join(__dirname, 'fotos', fileName);
+            if (fs.existsSync(filePath)) {
+                const buffer = fs.readFileSync(filePath);
+                const blob = new Blob([buffer], { type: 'image/png' });
+                formData.append(`image${i}`, blob, fileName);
+            }
+        }
+
+        const response = await fetch(process.env.IMAGE_ASSINATURA_UPLOAD_URL, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            logger.error(`Servidor de imagem assinatura retornou erro: ${response.status}`, 'asimagem');
+            return { error: true };
+        }
+
+        const text = await response.text();
+        try {
+            const result = JSON.parse(text);
+            logger.info(`Upload de imagens da assinatura finalizado para ID: ${idAssinaturaPacote}`, 'asimagem');
+        } catch (e) {
+            logger.info(`Upload de imagens da assinatura finalizado (res: ${text.substring(0, 50)}...)`, 'asimagem');
+        }
+        return { error: false };
+    } catch (error) {
+        logger.error(`Erro no upload de imagens da assinatura: ${error.message}`, 'asimagem');
+        return { error: true };
+    }
+};
+
+
 const checkLinkExists = (link) => {
     return new Promise((resolve, reject) => {
         const sql = "SELECT * FROM `clientes` WHERE empresa = ? and ativo = 1;";
@@ -147,7 +192,8 @@ const validarDados = async (dados, callback) => {
 };
 
 const atualizarDadosCliente = async (dados, callback) => {
-    const { id_cliente, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo } = dados;
+    const { id_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo } = dados;
+    const bancoSecundario = id_cliente;
     const camposParaAtualizar = [];
     const valores = [];
     const mapaCampos = {
@@ -167,7 +213,6 @@ const atualizarDadosCliente = async (dados, callback) => {
             camposParaAtualizar.push(`${coluna} = ?`);
             valores.push(dados['link']);
         } else if (coluna == 'link') {
-            console.log("dados => ", coluna, campo, dados[campo])
             camposParaAtualizar.push(`${coluna} = ?`);
             valores.push('https://agendaservico.com/' + dados['link']);
         }
@@ -177,20 +222,19 @@ const atualizarDadosCliente = async (dados, callback) => {
         return callback(null, { ok: false });
     }
 
-    let logoPath = null;
-    let imageError = false;
     if (logo) {
-        try {
-            const uploadResult = await uploadLogoToAsImage(id_cliente, logo);
-            logoPath = uploadResult.path;
-            imageError = uploadResult.error;
-            if (logoPath) {
-                logger.info(`Logo enviada com sucesso: ${logoPath}`, 'asimagem');
+        logger.info(`Iniciando upload da logo em background para cliente: ${id_cliente}`, 'asimagem');
+        uploadLogoToAsImage(id_cliente, logo).then(uploadResult => {
+            if (uploadResult.path) {
+                logger.info(`Logo enviada com sucesso em background: ${uploadResult.path}`, 'asimagem');
+                const sqlUpdateLogo = 'UPDATE ??.empresa SET asimage = ?';
+                db.query(sqlUpdateLogo, [id_cliente, uploadResult.path], (errLogo) => {
+                    if (errLogo) logger.error(`Erro ao atualizar logo no banco: ${errLogo.message}`, 'banco');
+                });
             }
-        } catch (uploadError) {
-            logger.error(`Erro ao processar logo: ${uploadError.message}`, 'asimagem');
-            imageError = true;
-        }
+        }).catch(err => {
+            logger.error(`Erro no upload de logo background: ${err.message}`, 'asimagem');
+        });
     }
 
     try {
@@ -224,8 +268,6 @@ const atualizarDadosCliente = async (dados, callback) => {
                     }
 
                     const id_senha = resultsSenha.insertId;
-                    // const bancoSecundario = id_cliente;
-                    const bancoSecundario = '0663';
 
                     const queryUpdateFunc = `UPDATE \`${bancoSecundario}\`.funcionario SET nome = ?, telefone = ?, id_senha = ?, funcionamento = 12 WHERE id_funcionario = 3`;
                     const valoresUpdateFunc = [dados.nome, dados.telefone, id_senha];
@@ -269,11 +311,6 @@ const atualizarDadosCliente = async (dados, callback) => {
                             const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?'];
                             const valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString];
 
-                            if (logoPath) {
-                                camposEmpresa.push('asimage = ?');
-                                valores2.push(logoPath);
-                            }
-
                             const query2 = `UPDATE \`${bancoSecundario}\`.empresa SET ${camposEmpresa.join(', ')}`;
 
                             db.query(query2, valores2, (error2) => {
@@ -289,45 +326,50 @@ const atualizarDadosCliente = async (dados, callback) => {
                                         return callback(error3);
                                     }
 
-                                    if (servicos && Array.isArray(servicos) && servicos.length > 0) {
-                                        const processarServicos = async () => {
-                                            const valores3 = [];
-                                            for (const s of servicos) {
-                                                let serviceImagePath = null;
-                                                const mappedImage = SERVICE_IMAGE_MAPPING[s.nome];
+                                    const processarServicos = async () => {
+                                        const valores3 = servicos.map(s => [s.nome, s.valor, s.tempo, s.descricao, null]);
 
-                                                if (mappedImage) {
-                                                    logger.info(`Associando serviço ${s.nome} com imagem ${mappedImage}`, 'asimagem');
-                                                    const uploadResult = await uploadLocalImageToAsImage(id_cliente, mappedImage);
-                                                    serviceImagePath = uploadResult.path;
-                                                }
+                                        const query3 = `INSERT INTO \`${bancoSecundario}\`.servico (nome_servico, valor_servico, tempo, descricao_servico, image) VALUES ?`;
 
-
-                                                valores3.push([s.nome, s.valor, s.tempo, s.descricao, serviceImagePath]);
+                                        db.query(query3, [valores3], (error3, results3) => {
+                                            if (error3) {
+                                                logger.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}): ${error3.message}`, 'banco');
+                                                return callback(error3);
                                             }
 
-                                            const query3 = `INSERT INTO \`${bancoSecundario}\`.servico (nome_servico, valor_servico, tempo, descricao_servico, image) VALUES ?`;
+                                            const firstInsertId = results3.insertId;
+                                            const affectedRows = results3.affectedRows;
+                                            const lastInsertId = firstInsertId + affectedRows - 1;
 
-                                            db.query(query3, [valores3], (error3, results3) => {
-                                                if (error3) {
-                                                    logger.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}): ${error3.message}`, 'banco');
-                                                    return callback(error3);
-                                                }
-
-                                                const firstInsertId = results3.insertId;
-                                                const affectedRows = results3.affectedRows;
-                                                const lastInsertId = firstInsertId + affectedRows - 1;
-
-                                                const finalizarProcessamento = () => {
-                                                    const queryDelete = `DELETE FROM \`${bancoSecundario}\`.funcionario_servico_funcionamento`;
-
-                                                    db.query(queryDelete, (errorDelete) => {
-                                                        if (errorDelete) {
-                                                            logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
-                                                            return callback(errorDelete);
+                                            // Dispara upload das fotos dos serviços em background
+                                            servicos.forEach((s, index) => {
+                                                const mappedImage = SERVICE_IMAGE_MAPPING[s.nome];
+                                                if (mappedImage) {
+                                                    const currentServiceId = firstInsertId + index;
+                                                    uploadLocalImageToAsImage(id_cliente, mappedImage).then(result => {
+                                                        if (result.path) {
+                                                            logger.info(`Foto do serviço "${s.nome}" enviada com sucesso: ${result.path}`, 'asimagem');
+                                                            const sqlUpdateImg = `UPDATE \`${id_cliente}\`.servico SET image = ? WHERE id_servico = ?`;
+                                                            db.query(sqlUpdateImg, [result.path, currentServiceId], (errUpd) => {
+                                                                if (errUpd) logger.error(`Erro ao vincular imagem ao serviço ${currentServiceId}: ${errUpd.message}`, 'banco');
+                                                            });
                                                         }
+                                                    }).catch(err => {
+                                                        logger.error(`Erro no upload background do serviço ${s.nome}: ${err.message}`, 'asimagem');
+                                                    });
+                                                }
+                                            });
 
-                                                        const query4 = `
+                                            const finalizarProcessamento = () => {
+                                                const queryDelete = `DELETE FROM \`${bancoSecundario}\`.funcionario_servico_funcionamento`;
+
+                                                db.query(queryDelete, (errorDelete) => {
+                                                    if (errorDelete) {
+                                                        logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
+                                                        return callback(errorDelete);
+                                                    }
+
+                                                    const query4 = `
                                                                         INSERT INTO \`${bancoSecundario}\`.funcionario_servico_funcionamento 
                                                                         (id_funcionamento, id_funcionario, id_servico, tempo, valor, comissao, status_variacao, existe_variacao)
                                                                         SELECT 
@@ -345,126 +387,143 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                         AND s.id_servico BETWEEN ? AND ?
                                                                     `;
 
-                                                        db.query(query4, [firstInsertId, lastInsertId], (error4) => {
-                                                            if (error4) {
-                                                                logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
-                                                                return callback(error4);
-                                                            }
+                                                    db.query(query4, [firstInsertId, lastInsertId], (error4) => {
+                                                        if (error4) {
+                                                            logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
+                                                            return callback(error4);
+                                                        }
 
-                                                            const servicesMatchedA = [];
-                                                            const servicesMatchedB = [];
+                                                        const servicesMatchedA = [];
+                                                        const servicesMatchedB = [];
 
-                                                            servicos.forEach((s, index) => {
-                                                                if (GROUP_A_SERVICES.includes(s.nome)) servicesMatchedA.push(index);
-                                                                if (GROUP_B_SERVICES.includes(s.nome)) servicesMatchedB.push(index);
-                                                            });
+                                                        servicos.forEach((s, index) => {
+                                                            if (GROUP_A_SERVICES.includes(s.nome)) servicesMatchedA.push(index);
+                                                            if (GROUP_B_SERVICES.includes(s.nome)) servicesMatchedB.push(index);
+                                                        });
 
-                                                            const registrarAssinatura = (matchedIndices, pattern) => {
-                                                                return new Promise((resolve, reject) => {
-                                                                    if (matchedIndices.length === 0) return resolve();
+                                                        const registrarAssinatura = (matchedIndices, pattern) => {
+                                                            return new Promise((resolve, reject) => {
+                                                                if (matchedIndices.length === 0) return resolve();
 
-                                                                    const subscriptionServices = matchedIndices.map(idx => ({
-                                                                        id: (firstInsertId + idx).toString(),
-                                                                        quantidade: "0"
-                                                                    }));
+                                                                const subscriptionServices = matchedIndices.map(idx => ({
+                                                                    id: (firstInsertId + idx).toString(),
+                                                                    quantidade: "0"
+                                                                }));
 
-                                                                    const template = pattern === 'A' ? {
-                                                                        nome: 'Cabelo + Barba Ilimitado',
-                                                                        descricao: 'Corte + barba ilimitados por R$149,90/mês.\r\nCuide do visual sempre que precisar, sem se preocupar com cada visita. Tenha liberdade para manter o corte em dia e a barba alinhada o mês inteiro, com economia e praticidade em um único plano.',
-                                                                        subtitulo: 'Cabelo + Barba Ilimitado',
-                                                                        link: 'cabelo-barba-ilimitado'
-                                                                    } : {
-                                                                        nome: 'Beleza & Estética Ilimitada',
-                                                                        descricao: 'Transforme seu visual e mantenha sua autoestima sempre em alta. Com nosso plano ilimitado, você tem acesso aos melhores cuidados capilares e tratamentos estéticos sempre que desejar. Praticidade e elegância reunidas em uma assinatura exclusiva para você.',
-                                                                        subtitulo: 'Beleza & Estética Ilimitada',
-                                                                        link: 'beleza-estetica-ilimitada'
-                                                                    };
+                                                                const imagesToUpload = matchedIndices
+                                                                    .map(idx => SERVICE_IMAGE_MAPPING[servicos[idx].nome])
+                                                                    .filter(Boolean);
 
-                                                                    const sqlAssinatura = `
+                                                                const template = pattern === 'A' ? {
+                                                                    nome: 'Cabelo + Barba Ilimitado',
+                                                                    descricao: 'Corte + barba ilimitados por R$149,90/mês.\r\nCuide do visual sempre que precisar, sem se preocupar com cada visita. Tenha liberdade para manter o corte em dia e a barba alinhada o mês inteiro, com economia e praticidade em um único plano.',
+                                                                    subtitulo: 'Cabelo + Barba Ilimitado',
+                                                                    link: 'cabelo-barba-ilimitado'
+                                                                } : {
+                                                                    nome: 'Beleza & Estética Ilimitada',
+                                                                    descricao: 'Transforme seu visual e mantenha sua autoestima sempre em alta. Com nosso plano ilimitado, você tem acesso aos melhores cuidados capilares e tratamentos estéticos sempre que desejar. Praticidade e elegância reunidas em uma assinatura exclusiva para você.',
+                                                                    subtitulo: 'Beleza & Estética Ilimitada',
+                                                                    link: 'beleza-estetica-ilimitada'
+                                                                };
+
+                                                                const sqlAssinatura = `
                                                                         INSERT INTO \`${bancoSecundario}\`.assinatura_pacote 
                                                                         (tipo, nome, valor, descricao, servicos, subtitulo, termino, forma_pagamento, regra, metodo_pagamento, versao_termos_cliente, link, status, etiqueta, recorrencia, utilizacao, imagem, data_cadastro, ocultar) 
                                                                         VALUES ('1', ?, '14990', ?, ?, ?, '0', '1', '0', '2', '3', ?, '1', '1', '1', '1', ?, NOW(), '0')
                                                                     `;
 
-                                                                    const valuesAssinatura = [
-                                                                        template.nome, template.descricao, JSON.stringify(subscriptionServices),
-                                                                        template.subtitulo, template.link, matchedIndices.length.toString()
-                                                                    ];
+                                                                const valuesAssinatura = [
+                                                                    template.nome, template.descricao, JSON.stringify(subscriptionServices),
+                                                                    template.subtitulo, template.link, matchedIndices.length.toString()
+                                                                ];
 
-                                                                    db.query(sqlAssinatura, valuesAssinatura, (errAss) => {
-                                                                        if (errAss) {
-                                                                            logger.error(`Erro ao inserir assinatura (${pattern}): ${errAss.message}`, 'banco');
-                                                                            return reject(errAss);
-                                                                        }
-                                                                        resolve();
+                                                                db.query(sqlAssinatura, valuesAssinatura, (errAss, resultsAss) => {
+                                                                    if (errAss) {
+                                                                        logger.error(`Erro ao inserir assinatura (${pattern}): ${errAss.message}`, 'banco');
+                                                                        return reject(errAss);
+                                                                    }
+
+                                                                    const idAssinatura = resultsAss.insertId;
+                                                                    resolve({
+                                                                        success: true,
+                                                                        id: idAssinatura,
+                                                                        images: imagesToUpload
                                                                     });
                                                                 });
-                                                            };
-
-                                                            Promise.all([
-                                                                registrarAssinatura(servicesMatchedA, 'A'),
-                                                                registrarAssinatura(servicesMatchedB, 'B')
-                                                            ]).then(() => {
-                                                                callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
-                                                            }).catch(err => {
-                                                                logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
-                                                                callback(err);
                                                             });
+                                                        };
+
+                                                        Promise.all([
+                                                            registrarAssinatura(servicesMatchedA, 'A'),
+                                                            registrarAssinatura(servicesMatchedB, 'B')
+                                                        ]).then((results) => {
+                                                            const assinaturas = results.filter(r => r && r.success);
+                                                            callback(null, {
+                                                                ok: true,
+                                                                imageError: false,
+                                                                assinaturas,
+                                                                message: "Site criado com sucesso!"
+                                                            });
+                                                        }).catch(err => {
+                                                            logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
+                                                            callback(err);
                                                         });
                                                     });
-                                                };
+                                                });
+                                            };
 
-                                                if (servicos.length > 1) {
-                                                    const queryResetCat = `UPDATE \`${bancoSecundario}\`.categoria_servico SET status = 0`;
-                                                    db.query(queryResetCat, (errReset) => {
-                                                        if (errReset) {
-                                                            logger.error(`Erro ao resetar status das categorias no banco secundário (${bancoSecundario}): ${errReset.message}`, 'banco');
-                                                            return callback(errReset);
+                                            if (servicos.length > 1) {
+                                                const queryResetCat = `UPDATE \`${bancoSecundario}\`.categoria_servico SET status = 0`;
+                                                db.query(queryResetCat, (errReset) => {
+                                                    if (errReset) {
+                                                        logger.error(`Erro ao resetar status das categorias no banco secundário (${bancoSecundario}): ${errReset.message}`, 'banco');
+                                                        return callback(errReset);
+                                                    }
+
+                                                    const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status) VALUES ('Categoria', 1)`;
+                                                    db.query(queryCat, (errCat, resCat) => {
+                                                        if (errCat) {
+                                                            logger.error(`Erro ao criar categoria no banco secundário (${bancoSecundario}): ${errCat.message}`, 'banco');
+                                                            return callback(errCat);
                                                         }
 
-                                                        const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status) VALUES ('Categoria', 1)`;
-                                                        db.query(queryCat, (errCat, resCat) => {
-                                                            if (errCat) {
-                                                                logger.error(`Erro ao criar categoria no banco secundário (${bancoSecundario}): ${errCat.message}`, 'banco');
-                                                                return callback(errCat);
+                                                        const id_categoria = resCat.insertId;
+                                                        const queryUpdateServ = `UPDATE \`${bancoSecundario}\`.servico SET id_categoria = ? WHERE id_servico BETWEEN ? AND ?`;
+
+                                                        db.query(queryUpdateServ, [id_categoria, firstInsertId + 1, lastInsertId], (errUpdate) => {
+                                                            if (errUpdate) {
+                                                                logger.error(`Erro ao vincular serviços à categoria no banco secundário (${bancoSecundario}): ${errUpdate.message}`, 'banco');
+                                                                return callback(errUpdate);
                                                             }
 
-                                                            const id_categoria = resCat.insertId;
-                                                            const queryUpdateServ = `UPDATE \`${bancoSecundario}\`.servico SET id_categoria = ? WHERE id_servico BETWEEN ? AND ?`;
-
-                                                            db.query(queryUpdateServ, [id_categoria, firstInsertId + 1, lastInsertId], (errUpdate) => {
-                                                                if (errUpdate) {
-                                                                    logger.error(`Erro ao vincular serviços à categoria no banco secundário (${bancoSecundario}): ${errUpdate.message}`, 'banco');
-                                                                    return callback(errUpdate);
-                                                                }
-
-                                                                const queryVinculo = `
+                                                            const queryVinculo = `
                                                                                 INSERT INTO \`${bancoSecundario}\`.vinculo_servico_categoria_servico (id_servico, id_categoria_servico)
                                                                                 SELECT id_servico, ? FROM \`${bancoSecundario}\`.servico WHERE id_servico BETWEEN ? AND ?
                                                                             `;
 
-                                                                db.query(queryVinculo, [id_categoria, firstInsertId + 1, lastInsertId], (errVinculo) => {
-                                                                    if (errVinculo) {
-                                                                        logger.error(`Erro ao inserir na tabela vinculo_servico_categoria_servico: ${errVinculo.message}`, 'banco');
-                                                                        return callback(errVinculo);
-                                                                    }
-                                                                    finalizarProcessamento();
-                                                                });
+                                                            db.query(queryVinculo, [id_categoria, firstInsertId + 1, lastInsertId], (errVinculo) => {
+                                                                if (errVinculo) {
+                                                                    logger.error(`Erro ao inserir na tabela vinculo_servico_categoria_servico: ${errVinculo.message}`, 'banco');
+                                                                    return callback(errVinculo);
+                                                                }
+                                                                finalizarProcessamento();
                                                             });
                                                         });
                                                     });
-                                                } else {
-                                                    finalizarProcessamento();
-                                                }
-                                            });
-                                        };
+                                                });
+                                            } else {
+                                                finalizarProcessamento();
+                                            }
+                                        });
+                                    };
 
+                                    if (servicos && Array.isArray(servicos) && servicos.length > 0) {
                                         processarServicos().catch(err => {
                                             logger.error(`Erro ao processar imagens dos serviços: ${err.message}`, 'asimagem');
                                             return callback(err);
                                         });
                                     } else {
-                                        callback(null, { ok: true, imageError, message: imageError ? "Site criado com sucesso! (Erro ao salvar imagem)" : "Site criado com sucesso!" });
+                                        callback(null, { ok: true, message: "Site criado com sucesso!" });
                                     }
                                 })
                             });
@@ -482,5 +541,6 @@ const atualizarDadosCliente = async (dados, callback) => {
 
 module.exports = {
     atualizarDadosCliente,
-    validarDados
+    validarDados,
+    uploadSubscriptionImages
 };
