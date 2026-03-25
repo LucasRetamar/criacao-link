@@ -192,8 +192,8 @@ const validarDados = async (dados, callback) => {
 };
 
 const atualizarDadosCliente = async (dados, callback) => {
-    const { id_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo } = dados;
-    const bancoSecundario = id_cliente;
+    const { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo } = dados;
+    const bancoSecundario = id_banco_cliente;
     const camposParaAtualizar = [];
     const valores = [];
     const mapaCampos = {
@@ -228,7 +228,7 @@ const atualizarDadosCliente = async (dados, callback) => {
             if (uploadResult.path) {
                 logger.info(`Logo enviada com sucesso em background: ${uploadResult.path}`, 'asimagem');
                 const sqlUpdateLogo = 'UPDATE ??.empresa SET asimage = ?';
-                db.query(sqlUpdateLogo, [id_cliente, uploadResult.path], (errLogo) => {
+                db.query(sqlUpdateLogo, [bancoSecundario, uploadResult.path], (errLogo) => {
                     if (errLogo) logger.error(`Erro ao atualizar logo no banco: ${errLogo.message}`, 'banco');
                 });
             }
@@ -349,7 +349,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                     uploadLocalImageToAsImage(id_cliente, mappedImage).then(result => {
                                                         if (result.path) {
                                                             logger.info(`Foto do serviço "${s.nome}" enviada com sucesso: ${result.path}`, 'asimagem');
-                                                            const sqlUpdateImg = `UPDATE \`${id_cliente}\`.servico SET image = ? WHERE id_servico = ?`;
+                                                            const sqlUpdateImg = `UPDATE \`${bancoSecundario}\`.servico SET image = ? WHERE id_servico = ?`;
                                                             db.query(sqlUpdateImg, [result.path, currentServiceId], (errUpd) => {
                                                                 if (errUpd) logger.error(`Erro ao vincular imagem ao serviço ${currentServiceId}: ${errUpd.message}`, 'banco');
                                                             });
@@ -453,20 +453,28 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                             });
                                                         };
 
-                                                        Promise.all([
-                                                            registrarAssinatura(servicesMatchedA, 'A'),
-                                                            registrarAssinatura(servicesMatchedB, 'B')
-                                                        ]).then((results) => {
-                                                            const assinaturas = results.filter(r => r && r.success);
-                                                            callback(null, {
-                                                                ok: true,
-                                                                imageError: false,
-                                                                assinaturas,
-                                                                message: "Site criado com sucesso!"
+                                                        const sqlResetAss = `UPDATE \`${bancoSecundario}\`.assinatura_pacote SET status = '0'`;
+                                                        db.query(sqlResetAss, (errResetAss) => {
+                                                            if (errResetAss) {
+                                                                logger.error(`Erro ao resetar status das assinaturas no banco secundário (${bancoSecundario}): ${errResetAss.message}`, 'banco');
+                                                                return callback(errResetAss);
+                                                            }
+
+                                                            Promise.all([
+                                                                registrarAssinatura(servicesMatchedA, 'A'),
+                                                                registrarAssinatura(servicesMatchedB, 'B')
+                                                            ]).then((results) => {
+                                                                const assinaturas = results.filter(r => r && r.success);
+                                                                callback(null, {
+                                                                    ok: true,
+                                                                    imageError: false,
+                                                                    assinaturas,
+                                                                    message: "Site criado com sucesso!"
+                                                                });
+                                                            }).catch(err => {
+                                                                logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
+                                                                callback(err);
                                                             });
-                                                        }).catch(err => {
-                                                            logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
-                                                            callback(err);
                                                         });
                                                     });
                                                 });

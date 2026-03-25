@@ -50,15 +50,17 @@ router.post('/atualizarDados', (req, res) => {
         });
     }
 
-
+    // const { id_cliente } = req.body;
     const id_cliente = '0663';
+    // const { id_banco_cliente } = req.body;
+    const id_banco_cliente = 'agendaservico0663';
 
     if (!id_cliente) {
         return res.status(400).json({ error: 'ID do cliente é obrigatório.' });
     }
 
     const { nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos } = req.body;
-    const dados = { id_cliente, nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos };
+    const dados = { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos };
 
     const validacao = validarDadosCliente(dados);
     if (!validacao.valido) {
