@@ -308,7 +308,7 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                             const coresJsonString = JSON.stringify(novasCores);
 
-                            const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?'];
+                            const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?', 'ordenar_categoria = 1'];
                             const valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString];
 
                             const query2 = `UPDATE \`${bancoSecundario}\`.empresa SET ${camposEmpresa.join(', ')}`;
@@ -410,9 +410,20 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                     quantidade: "0"
                                                                 }));
 
-                                                                const imagesToUpload = matchedIndices
+                                                                let imagesToUpload = matchedIndices
                                                                     .map(idx => SERVICE_IMAGE_MAPPING[servicos[idx].nome])
                                                                     .filter(Boolean);
+
+
+                                                                const group = pattern === 'A' ? GROUP_A_SERVICES : GROUP_B_SERVICES;
+                                                                for (const serviceName of group) {
+                                                                    if (imagesToUpload.length >= 3) break;
+                                                                    const img = SERVICE_IMAGE_MAPPING[serviceName];
+                                                                    if (img && !imagesToUpload.includes(img)) {
+                                                                        imagesToUpload.push(img);
+                                                                    }
+                                                                }
+                                                                imagesToUpload = imagesToUpload.slice(0, 3);
 
                                                                 const template = pattern === 'A' ? {
                                                                     nome: 'Cabelo + Barba Ilimitado',
@@ -429,12 +440,12 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                 const sqlAssinatura = `
                                                                         INSERT INTO \`${bancoSecundario}\`.assinatura_pacote 
                                                                         (tipo, nome, valor, descricao, servicos, subtitulo, termino, forma_pagamento, regra, metodo_pagamento, versao_termos_cliente, link, status, etiqueta, recorrencia, utilizacao, imagem, data_cadastro, ocultar) 
-                                                                        VALUES ('1', ?, '14990', ?, ?, ?, '0', '1', '0', '2', '3', ?, '1', '1', '1', '1', ?, NOW(), '0')
+                                                                        VALUES ('1', ?, '14990', ?, ?, ?, '0', '1', '0', '2', '3', ?, '1', '1', '1', '1', '3', NOW(), '0')
                                                                     `;
 
                                                                 const valuesAssinatura = [
                                                                     template.nome, template.descricao, JSON.stringify(subscriptionServices),
-                                                                    template.subtitulo, template.link, matchedIndices.length.toString()
+                                                                    template.subtitulo, template.link
                                                                 ];
 
                                                                 db.query(sqlAssinatura, valuesAssinatura, (errAss, resultsAss) => {
