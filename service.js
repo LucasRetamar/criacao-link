@@ -192,7 +192,7 @@ const validarDados = async (dados, callback) => {
 };
 
 const atualizarDadosCliente = async (dados, callback) => {
-    const { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo } = dados;
+    const { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo, google, instagram } = dados;
     const bancoSecundario = id_banco_cliente;
     const camposParaAtualizar = [];
     const valores = [];
@@ -308,8 +308,8 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                             const coresJsonString = JSON.stringify(novasCores);
 
-                            const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?', 'ordenar_categoria = 1'];
-                            const valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString];
+                            const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?', 'maps = ?', 'instagram = ?', 'ordenar_categoria = 1'];
+                            const valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString, google || null, instagram || null];
 
                             const query2 = `UPDATE \`${bancoSecundario}\`.empresa SET ${camposEmpresa.join(', ')}`;
 
