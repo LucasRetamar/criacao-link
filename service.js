@@ -168,6 +168,23 @@ const checkPhoneExists = (telefone) => {
     });
 };
 
+const buscarProximoIdCliente = () => {
+    return new Promise((resolve, reject) => {
+        const sql = "SELECT id_cliente FROM clientes WHERE ativo = 1 and link_cadastro = 0 ORDER BY clientes.id_cliente ASC LIMIT 1;";
+        db.query(sql, (error, results) => {
+            if (error) {
+                logger.error(`Erro ao buscar o próximo ID do cliente: ${error.message}`, 'banco');
+                return reject(error);
+            }
+            if (results.length > 0) {
+                resolve(results[0].id_cliente);
+            } else {
+                reject(new Error("Nenhum cliente disponível para atualização (ativo = 1 and link_cadastro = 0)."));
+            }
+        });
+    });
+};
+
 const validarDados = async (dados, callback) => {
     const { tipo, valor } = dados;
 
@@ -194,6 +211,8 @@ const validarDados = async (dados, callback) => {
 const atualizarDadosCliente = async (dados, callback) => {
     const { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo, google, instagram } = dados;
     const bancoSecundario = id_banco_cliente;
+    const criarCategoria = process.env.CRIAR_CATEGORIA !== 'false';
+    const criarAssinatura = process.env.CRIAR_ASSINATURA !== 'false';
     const camposParaAtualizar = [];
     const valores = [];
     const mapaCampos = {
@@ -218,25 +237,13 @@ const atualizarDadosCliente = async (dados, callback) => {
         }
     }
 
+
+    camposParaAtualizar.push('link_cadastro = ?');
+    valores.push(1);
+
     if (camposParaAtualizar.length === 0 && !logo) {
         return callback(null, { ok: false });
     }
-
-    if (logo) {
-        logger.info(`Iniciando upload da logo em background para cliente: ${id_cliente}`, 'asimagem');
-        uploadLogoToAsImage(id_cliente, logo).then(uploadResult => {
-            if (uploadResult.path) {
-                logger.info(`Logo enviada com sucesso em background: ${uploadResult.path}`, 'asimagem');
-                const sqlUpdateLogo = 'UPDATE ??.empresa SET asimage = ?';
-                db.query(sqlUpdateLogo, [bancoSecundario, uploadResult.path], (errLogo) => {
-                    if (errLogo) logger.error(`Erro ao atualizar logo no banco: ${errLogo.message}`, 'banco');
-                });
-            }
-        }).catch(err => {
-            logger.error(`Erro no upload de logo background: ${err.message}`, 'asimagem');
-        });
-    }
-
     try {
         const linkExists = await checkLinkExists(dados['link']);
         if (linkExists) {
@@ -248,6 +255,21 @@ const atualizarDadosCliente = async (dados, callback) => {
         if (phoneExists) {
             logger.error(`Telefone ja esta cadastrado: ${dados['telefone']}`, 'banco');
             return callback(null, { ok: false });
+        }
+
+        if (logo) {
+            logger.info(`Iniciando upload da logo em background para cliente: ${id_cliente}`, 'asimagem');
+            uploadLogoToAsImage(id_cliente, logo).then(uploadResult => {
+                if (uploadResult.path) {
+                    logger.info(`Logo enviada com sucesso em background: ${uploadResult.path}`, 'asimagem');
+                    const sqlUpdateLogo = 'UPDATE ??.empresa SET asimage = ?';
+                    db.query(sqlUpdateLogo, [bancoSecundario, uploadResult.path], (errLogo) => {
+                        if (errLogo) logger.error(`Erro ao atualizar logo no banco: ${errLogo.message}`, 'banco');
+                    });
+                }
+            }).catch(err => {
+                logger.error(`Erro no upload de logo background: ${err.message}`, 'asimagem');
+            });
         }
 
         const query1 = `UPDATE clientes SET ${camposParaAtualizar.length > 0 ? camposParaAtualizar.join(', ') : 'id_cliente = id_cliente'} WHERE id_cliente = ?`;
@@ -464,6 +486,15 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                             });
                                                         };
 
+                                                        if (!criarAssinatura) {
+                                                            return callback(null, {
+                                                                ok: true,
+                                                                imageError: false,
+                                                                assinaturas: [],
+                                                                message: "Site criado com sucesso!"
+                                                            });
+                                                        }
+
                                                         const sqlResetAss = `UPDATE \`${bancoSecundario}\`.assinatura_pacote SET status = '0'`;
                                                         db.query(sqlResetAss, (errResetAss) => {
                                                             if (errResetAss) {
@@ -491,13 +522,14 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                 });
                                             };
 
-                                            if (servicos.length > 1) {
+                                            if (servicos.length > 1 && criarCategoria) {
                                                 const queryResetCat = `UPDATE \`${bancoSecundario}\`.categoria_servico SET status = 0`;
                                                 db.query(queryResetCat, (errReset) => {
                                                     if (errReset) {
                                                         logger.error(`Erro ao resetar status das categorias no banco secundário (${bancoSecundario}): ${errReset.message}`, 'banco');
                                                         return callback(errReset);
                                                     }
+
 
                                                     const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status) VALUES ('Categoria', 1)`;
                                                     db.query(queryCat, (errCat, resCat) => {
@@ -561,5 +593,6 @@ const atualizarDadosCliente = async (dados, callback) => {
 module.exports = {
     atualizarDadosCliente,
     validarDados,
-    uploadSubscriptionImages
+    uploadSubscriptionImages,
+    buscarProximoIdCliente
 };

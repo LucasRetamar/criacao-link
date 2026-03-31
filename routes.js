@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('./logger');
-const { atualizarDadosCliente, validarDados, uploadSubscriptionImages } = require('./service');
+const { atualizarDadosCliente, validarDados, uploadSubscriptionImages, buscarProximoIdCliente } = require('./service');
 const { validarDadosCliente } = require('./validacoes');
 
 
@@ -40,7 +40,7 @@ router.post('/validarDados', (req, res) => {
     });
 });
 
-router.post('/atualizarDados', (req, res) => {
+router.post('/atualizarDados', async (req, res) => {
     if (!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) {
         logger.error('Requisição recebida sem corpo ou com formato incorreto', 'req');
         return res.status(400).json({
@@ -50,10 +50,22 @@ router.post('/atualizarDados', (req, res) => {
         });
     }
 
-    // const { id_cliente } = req.body;
-    const id_cliente = '0663';
-    // const { id_banco_cliente } = req.body;
-    const id_banco_cliente = 'agendaservico0663';
+    let id_cliente;
+    let id_banco_cliente;
+
+    try {
+        id_cliente = await buscarProximoIdCliente();
+        id_banco_cliente = 'agendaservico' + id_cliente;
+        logger.info(`ID do cliente selecionado automaticamente: ${id_cliente}`, 'req');
+    } catch (error) {
+        logger.error(`Erro ao obter próximo ID do cliente: ${error.message}`, 'req');
+        return res.status(404).json({
+            error: true,
+            status: 404,
+            message: 'Nenhum cliente disponível para atualização automática.',
+            detalhes: error.message
+        });
+    }
 
     if (!id_cliente) {
         return res.status(400).json({ error: 'ID do cliente é obrigatório.' });
