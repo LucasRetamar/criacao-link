@@ -349,9 +349,9 @@ const atualizarDadosCliente = async (dados, callback) => {
                                     }
 
                                     const processarServicos = async () => {
-                                        const valores3 = servicos.map(s => [s.nome, s.valor, s.tempo, s.descricao, null]);
+                                        const valores3 = servicos.map(s => [s.nome, s.valor, s.tempo, s.descricao, null, 0]);
 
-                                        const query3 = `INSERT INTO \`${bancoSecundario}\`.servico (nome_servico, valor_servico, tempo, descricao_servico, image) VALUES ?`;
+                                        const query3 = `INSERT INTO \`${bancoSecundario}\`.servico (nome_servico, valor_servico, tempo, descricao_servico, image, id_categoria) VALUES ?`;
 
                                         db.query(query3, [valores3], (error3, results3) => {
                                             if (error3) {
@@ -531,7 +531,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                     }
 
 
-                                                    const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status) VALUES ('Categoria', 1)`;
+                                                    const queryCat = `INSERT INTO \`${bancoSecundario}\`.categoria_servico (descricao, status, ordem) VALUES ('Categoria', 1, 1)`;
                                                     db.query(queryCat, (errCat, resCat) => {
                                                         if (errCat) {
                                                             logger.error(`Erro ao criar categoria no banco secundário (${bancoSecundario}): ${errCat.message}`, 'banco');
