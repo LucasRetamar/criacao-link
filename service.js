@@ -238,8 +238,16 @@ const atualizarDadosCliente = async (dados, callback) => {
     }
 
 
-    camposParaAtualizar.push('link_cadastro = ?');
-    valores.push(1);
+    const agora = new Date();
+    const dataFormatada = agora.getFullYear() + '-' +
+        String(agora.getMonth() + 1).padStart(2, '0') + '-' +
+        String(agora.getDate()).padStart(2, '0') + ' ' +
+        String(agora.getHours()).padStart(2, '0') + ':' +
+        String(agora.getMinutes()).padStart(2, '0') + ':' +
+        String(agora.getSeconds()).padStart(2, '0');
+
+    camposParaAtualizar.push('link_cadastro = ?', 'data_cadastro = ?', 'final_licenca = ?', 'inicio_licenca = ?');
+    valores.push(1, dataFormatada, dataFormatada, dataFormatada);
 
     if (camposParaAtualizar.length === 0 && !logo) {
         return callback(null, { ok: false });
