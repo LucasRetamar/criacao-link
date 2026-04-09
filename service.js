@@ -246,8 +246,10 @@ const atualizarDadosCliente = async (dados, callback) => {
         String(agora.getMinutes()).padStart(2, '0') + ':' +
         String(agora.getSeconds()).padStart(2, '0');
 
-    camposParaAtualizar.push('link_cadastro = ?', 'data_cadastro = ?', 'final_licenca = ?', 'inicio_licenca = ?');
-    valores.push(1, dataFormatada, dataFormatada, dataFormatada);
+    const id_funcionario = dados.id_consultora !== undefined ? dados.id_consultora : 0;
+
+    camposParaAtualizar.push('link_cadastro = ?', 'data_cadastro = ?', 'final_licenca = ?', 'inicio_licenca = ?', 'id_funcionario = ?');
+    valores.push(1, dataFormatada, dataFormatada, dataFormatada, id_funcionario);
 
     if (camposParaAtualizar.length === 0 && !logo) {
         return callback(null, { ok: false });

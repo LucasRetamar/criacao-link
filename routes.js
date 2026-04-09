@@ -71,8 +71,8 @@ router.post('/atualizarDados', async (req, res) => {
         return res.status(400).json({ error: 'ID do cliente é obrigatório.' });
     }
 
-    const { nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos, google, instagram } = req.body;
-    const dados = { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos, google, instagram };
+    const { nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos, google, instagram, id_consultora } = req.body;
+    const dados = { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, cpf_cnpj, link, logo, tempo_listagem, cores, servicos, google, instagram, id_consultora };
 
     const validacao = validarDadosCliente(dados);
     if (!validacao.valido) {
