@@ -310,7 +310,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                             return callback(errorUpdateFunc);
                         }
 
-                        const queryFetch = `SELECT cores FROM \`${bancoSecundario}\`.empresa LIMIT 1`;
+                        const queryFetch = `SELECT cores, mensagens FROM \`${bancoSecundario}\`.empresa LIMIT 1`;
 
                         db.query(queryFetch, (errFetch, rows) => {
                             if (errFetch) {
@@ -324,6 +324,25 @@ const atualizarDadosCliente = async (dados, callback) => {
                                 coresAtuais = (rows[0] && rows[0].cores) ? (typeof rows[0].cores === 'string' ? JSON.parse(rows[0].cores) : rows[0].cores) : {};
                             } catch (e) {
                                 logger.error(`Erro ao parsear JSON de cores: ${e.message}`, 'banco');
+                            }
+
+                            let mensagemAtual = rows[0] && rows[0].mensagens;
+                            let novaMensagem = null;
+                            if (mensagemAtual) {
+                                try {
+                                    let msgObj = typeof mensagemAtual === 'string' ? JSON.parse(mensagemAtual) : mensagemAtual;
+                                    if (msgObj && msgObj["2000"]) {
+                                        const template = msgObj["2000"];
+                                        delete msgObj["2000"];
+                                        template.bd = `bd${id_cliente}`;
+
+                                        const newObj = { [id_cliente]: template };
+                                        Object.assign(newObj, msgObj);
+                                        novaMensagem = JSON.stringify(newObj);
+                                    }
+                                } catch (e) {
+                                    logger.error(`Erro ao processar campo mensagem: ${e.message}`, 'banco');
+                                }
                             }
                             novasCores["primaria"] = cores["primaria"];
                             novasCores["secundaria"] = cores["secundaria"];
@@ -340,8 +359,13 @@ const atualizarDadosCliente = async (dados, callback) => {
 
                             const coresJsonString = JSON.stringify(novasCores);
 
-                            const camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?', 'maps = ?', 'instagram = ?', 'ordenar_categoria = 1'];
-                            const valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString, google || null, instagram || null];
+                            let camposEmpresa = ['razao_social = ?', 'telefone = ?', 'link = ?', 'amostragem = ?', 'bd = ?', 'cores = ?', 'maps = ?', 'instagram = ?', 'ordenar_categoria = 1'];
+                            let valores2 = [nome_empresa, telefone, `https://agendaservico.com/${link}`, tempo_listagem, id_cliente, coresJsonString, google || null, instagram || null];
+
+                            if (novaMensagem) {
+                                camposEmpresa.push('mensagens = ?');
+                                valores2.push(novaMensagem);
+                            }
 
                             const query2 = `UPDATE \`${bancoSecundario}\`.empresa SET ${camposEmpresa.join(', ')}`;
 
