@@ -1,4 +1,4 @@
-const db = require('./database');
+const createConnection = require('./database');
 const logger = require('./logger');
 const fs = require('fs');
 const path = require('path');
@@ -150,8 +150,10 @@ const uploadSubscriptionImages = async (idCliente, idAssinaturaPacote, images) =
 
 const checkLinkExists = (link) => {
     return new Promise((resolve, reject) => {
+        const db = createConnection();
         const sql = "SELECT * FROM `clientes` WHERE empresa = ? and ativo = 1;";
         db.query(sql, [link], (error, results) => {
+            db.end();
             if (error) return reject(error);
             resolve(results.length > 0);
         });
@@ -160,8 +162,10 @@ const checkLinkExists = (link) => {
 
 const checkPhoneExists = (telefone) => {
     return new Promise((resolve, reject) => {
+        const db = createConnection();
         const sql = "SELECT * FROM `senhas` WHERE telefone = ? and status = 1;";
         db.query(sql, [telefone], (error, results) => {
+            db.end();
             if (error) return reject(error);
             resolve(results.length > 0);
         });
@@ -170,8 +174,10 @@ const checkPhoneExists = (telefone) => {
 
 const buscarProximoIdCliente = () => {
     return new Promise((resolve, reject) => {
+        const db = createConnection();
         const sql = "SELECT id_cliente FROM clientes WHERE ativo = 1 and link_cadastro = 0 ORDER BY clientes.id_cliente ASC LIMIT 1;";
         db.query(sql, (error, results) => {
+            db.end();
             if (error) {
                 logger.error(`Erro ao buscar o próximo ID do cliente: ${error.message}`, 'banco');
                 return reject(error);
@@ -209,6 +215,12 @@ const validarDados = async (dados, callback) => {
 };
 
 const atualizarDadosCliente = async (dados, callback) => {
+    const db = createConnection();
+    const finish = (err, result) => {
+        db.end();
+        callback(err, result);
+    };
+
     const { id_cliente, id_banco_cliente, nome, nome_empresa, telefone, link, tempo_listagem, cores, servicos, logo, google, instagram } = dados;
     const bancoSecundario = id_banco_cliente;
     const criarCategoria = process.env.CRIAR_CATEGORIA !== 'false';
@@ -252,19 +264,19 @@ const atualizarDadosCliente = async (dados, callback) => {
     valores.push(1, dataFormatada, dataFormatada, dataFormatada, id_funcionario);
 
     if (camposParaAtualizar.length === 0 && !logo) {
-        return callback(null, { ok: false });
+        return finish(null, { ok: false });
     }
     try {
         const linkExists = await checkLinkExists(dados['link']);
         if (linkExists) {
             logger.error(`Este link já está em uso por outra empresa: ${dados['link']}`, 'banco');
-            return callback(null, { ok: false });
+            return finish(null, { ok: false });
         }
 
         const phoneExists = await checkPhoneExists(dados['telefone']);
         if (phoneExists) {
             logger.error(`Telefone ja esta cadastrado: ${dados['telefone']}`, 'banco');
-            return callback(null, { ok: false });
+            return finish(null, { ok: false });
         }
 
         if (logo) {
@@ -272,8 +284,10 @@ const atualizarDadosCliente = async (dados, callback) => {
             uploadLogoToAsImage(id_cliente, logo).then(uploadResult => {
                 if (uploadResult.path) {
                     logger.info(`Logo enviada com sucesso em background: ${uploadResult.path}`, 'asimagem');
+                    const dbBg = createConnection();
                     const sqlUpdateLogo = 'UPDATE ??.empresa SET asimage = ?';
-                    db.query(sqlUpdateLogo, [bancoSecundario, uploadResult.path], (errLogo) => {
+                    dbBg.query(sqlUpdateLogo, [bancoSecundario, uploadResult.path], (errLogo) => {
+                        dbBg.end();
                         if (errLogo) logger.error(`Erro ao atualizar logo no banco: ${errLogo.message}`, 'banco');
                     });
                 }
@@ -286,7 +300,7 @@ const atualizarDadosCliente = async (dados, callback) => {
         const valores1 = [...valores, id_cliente];
         console.log(query1)
         db.query(query1, valores1, (error, results) => {
-            if (error) return callback(error);
+            if (error) return finish(error);
 
             if (results.affectedRows > 0) {
                 const querySenha = `INSERT INTO senhas (telefone, senha, id_cliente, suporte, status) VALUES (?, ?, ?, ?, ?)`;
@@ -296,7 +310,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                 db.query(querySenha, valoresSenha, (errorSenha, resultsSenha) => {
                     if (errorSenha) {
                         logger.error(`Erro ao inserir na tabela senhas: ${errorSenha.message}`, 'banco');
-                        return callback(errorSenha);
+                        return finish(errorSenha);
                     }
 
                     const id_senha = resultsSenha.insertId;
@@ -307,7 +321,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                     db.query(queryUpdateFunc, valoresUpdateFunc, (errorUpdateFunc) => {
                         if (errorUpdateFunc) {
                             logger.error(`Erro ao atualizar funcionário no banco secundário: ${errorUpdateFunc.message}`, 'banco');
-                            return callback(errorUpdateFunc);
+                            return finish(errorUpdateFunc);
                         }
 
                         const queryFetch = `SELECT cores, mensagens FROM \`${bancoSecundario}\`.empresa LIMIT 1`;
@@ -315,7 +329,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                         db.query(queryFetch, (errFetch, rows) => {
                             if (errFetch) {
                                 logger.error(`Erro ao buscar cores atuais: ${errFetch.message}`, 'banco');
-                                return callback(errFetch);
+                                return finish(errFetch);
                             }
 
                             let coresAtuais = {};
@@ -372,14 +386,14 @@ const atualizarDadosCliente = async (dados, callback) => {
                             db.query(query2, valores2, (error2) => {
                                 if (error2) {
                                     logger.error(`Erro ao atualizar banco secundário (${bancoSecundario}): ${error2.message}`, 'banco');
-                                    return callback(error2);
+                                    return finish(error2);
                                 }
 
                                 const sql = `UPDATE  \`${bancoSecundario}\`.servico SET status = '0';`;
                                 db.query(sql, [], (error3, results3) => {
                                     if (error3) {
                                         logger.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}): ${error3.message}`, 'banco');
-                                        return callback(error3);
+                                        return finish(error3);
                                     }
 
                                     const processarServicos = async () => {
@@ -390,7 +404,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                         db.query(query3, [valores3], (error3, results3) => {
                                             if (error3) {
                                                 logger.error(`Erro ao inserir serviços no banco secundário (${bancoSecundario}): ${error3.message}`, 'banco');
-                                                return callback(error3);
+                                                return finish(error3);
                                             }
 
                                             const firstInsertId = results3.insertId;
@@ -405,8 +419,10 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                     uploadLocalImageToAsImage(id_cliente, mappedImage).then(result => {
                                                         if (result.path) {
                                                             logger.info(`Foto do serviço "${s.nome}" enviada com sucesso: ${result.path}`, 'asimagem');
+                                                            const dbBg = createConnection();
                                                             const sqlUpdateImg = `UPDATE \`${bancoSecundario}\`.servico SET image = ? WHERE id_servico = ?`;
-                                                            db.query(sqlUpdateImg, [result.path, currentServiceId], (errUpd) => {
+                                                            dbBg.query(sqlUpdateImg, [result.path, currentServiceId], (errUpd) => {
+                                                                dbBg.end();
                                                                 if (errUpd) logger.error(`Erro ao vincular imagem ao serviço ${currentServiceId}: ${errUpd.message}`, 'banco');
                                                             });
                                                         }
@@ -422,7 +438,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                 db.query(queryDelete, (errorDelete) => {
                                                     if (errorDelete) {
                                                         logger.error(`Erro ao limpar vínculos no banco secundário (${bancoSecundario}): ${errorDelete.message}`, 'banco');
-                                                        return callback(errorDelete);
+                                                        return finish(errorDelete);
                                                     }
 
                                                     const query4 = `
@@ -446,7 +462,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                     db.query(query4, [firstInsertId, lastInsertId], (error4) => {
                                                         if (error4) {
                                                             logger.error(`Erro ao inserir vínculos de funcionamento no banco secundário (${bancoSecundario}): ${error4.message}`, 'banco');
-                                                            return callback(error4);
+                                                            return finish(error4);
                                                         }
 
                                                         const servicesMatchedA = [];
@@ -521,7 +537,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                         };
 
                                                         if (!criarAssinatura) {
-                                                            return callback(null, {
+                                                            return finish(null, {
                                                                 ok: true,
                                                                 imageError: false,
                                                                 assinaturas: [],
@@ -533,7 +549,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                         db.query(sqlResetAss, (errResetAss) => {
                                                             if (errResetAss) {
                                                                 logger.error(`Erro ao resetar status das assinaturas no banco secundário (${bancoSecundario}): ${errResetAss.message}`, 'banco');
-                                                                return callback(errResetAss);
+                                                                return finish(errResetAss);
                                                             }
 
                                                             Promise.all([
@@ -541,7 +557,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                 registrarAssinatura(servicesMatchedB, 'B')
                                                             ]).then((results) => {
                                                                 const assinaturas = results.filter(r => r && r.success);
-                                                                callback(null, {
+                                                                finish(null, {
                                                                     ok: true,
                                                                     imageError: false,
                                                                     assinaturas,
@@ -549,7 +565,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                                 });
                                                             }).catch(err => {
                                                                 logger.error(`Erro no processamento das assinaturas: ${err.message}`, 'banco');
-                                                                callback(err);
+                                                                finish(err);
                                                             });
                                                         });
                                                     });
@@ -561,7 +577,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                 db.query(queryResetCat, (errReset) => {
                                                     if (errReset) {
                                                         logger.error(`Erro ao resetar status das categorias no banco secundário (${bancoSecundario}): ${errReset.message}`, 'banco');
-                                                        return callback(errReset);
+                                                        return finish(errReset);
                                                     }
 
 
@@ -569,7 +585,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                     db.query(queryCat, (errCat, resCat) => {
                                                         if (errCat) {
                                                             logger.error(`Erro ao criar categoria no banco secundário (${bancoSecundario}): ${errCat.message}`, 'banco');
-                                                            return callback(errCat);
+                                                            return finish(errCat);
                                                         }
 
                                                         const id_categoria = resCat.insertId;
@@ -578,7 +594,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                         db.query(queryUpdateServ, [id_categoria, firstInsertId + 1, lastInsertId], (errUpdate) => {
                                                             if (errUpdate) {
                                                                 logger.error(`Erro ao vincular serviços à categoria no banco secundário (${bancoSecundario}): ${errUpdate.message}`, 'banco');
-                                                                return callback(errUpdate);
+                                                                return finish(errUpdate);
                                                             }
 
                                                             const queryVinculo = `
@@ -589,7 +605,7 @@ const atualizarDadosCliente = async (dados, callback) => {
                                                             db.query(queryVinculo, [id_categoria, firstInsertId + 1, lastInsertId], (errVinculo) => {
                                                                 if (errVinculo) {
                                                                     logger.error(`Erro ao inserir na tabela vinculo_servico_categoria_servico: ${errVinculo.message}`, 'banco');
-                                                                    return callback(errVinculo);
+                                                                    return finish(errVinculo);
                                                                 }
                                                                 finalizarProcessamento();
                                                             });
@@ -605,10 +621,10 @@ const atualizarDadosCliente = async (dados, callback) => {
                                     if (servicos && Array.isArray(servicos) && servicos.length > 0) {
                                         processarServicos().catch(err => {
                                             logger.error(`Erro ao processar imagens dos serviços: ${err.message}`, 'asimagem');
-                                            return callback(err);
+                                            return finish(err);
                                         });
                                     } else {
-                                        callback(null, { ok: true, message: "Site criado com sucesso!" });
+                                        finish(null, { ok: true, message: "Site criado com sucesso!" });
                                     }
                                 })
                             });
@@ -616,11 +632,11 @@ const atualizarDadosCliente = async (dados, callback) => {
                     });
                 });
             } else {
-                callback(null, { ok: false });
+                finish(null, { ok: false });
             }
         });
     } catch (error) {
-        callback(error);
+        finish(error);
     }
 };
 

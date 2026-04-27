@@ -9,10 +9,20 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 
-app.use((req, res, next) => {
+/*app.use((req, res, next) => {
     logger.http(`${req.method} ${req.url}\n${JSON.stringify(req.body, null, 2)}`, 'req');
     next();
+});*/
+
+app.use((req, res, next) => {
+    const logBody = req.body ? { ...req.body } : {};
+    if (logBody.logo && typeof logBody.logo === 'string') {
+        logBody.logo = logBody.logo.substring(0, 50) + '... [TRUNCATED]';
+    }
+    logger.http(`${req.method} ${req.url}\n${JSON.stringify(logBody, null, 2)}`, 'req');
+    next();
 });
+
 
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
